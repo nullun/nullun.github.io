@@ -1,0 +1,1805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Algorand Block Stream</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: radial-gradient(ellipse at top, #0a0e27 0%, #03040c 100%);
+    color: #e8ecff;
+    min-height: 100vh;
+    padding: 24px;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 24px; flex-wrap: wrap; gap: 16px;
+  }
+  h1 {
+    font-size: 22px; font-weight: 600; letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #7c9eff, #b67cff);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .endpoint {
+    display: flex; gap: 8px; align-items: center;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px; padding: 6px 10px;
+  }
+  .endpoint input {
+    background: transparent; border: none; color: #e8ecff;
+    width: 320px; font-size: 13px; outline: none; font-family: inherit;
+  }
+  .endpoint button {
+    background: linear-gradient(135deg, #7c9eff, #b67cff);
+    color: #03040c; border: none; padding: 6px 14px;
+    border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 12px;
+  }
+  .status {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: #8a93b8;
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #4ade80; box-shadow: 0 0 8px #4ade80;
+    animation: pulse 1.5s infinite;
+  }
+  .dot.err { background: #f87171; box-shadow: 0 0 8px #f87171; animation: none;}
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  .stats {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px; margin-bottom: 24px;
+  }
+  .stat {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px; padding: 14px 16px;
+  }
+  .stat-label { font-size: 11px; color: #8a93b8; text-transform: uppercase; letter-spacing: 0.5px;}
+  .stat-value { font-size: 22px; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums;}
+
+  .chart-wrap {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px; padding: 16px; margin-bottom: 24px;
+  }
+  .chart-title { font-size: 12px; color: #8a93b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;}
+  canvas { width: 100%; height: 280px; display: block; border-radius: 8px; }
+  #gini { height: 80px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; font-size: 11px; color: #b8bedb;}
+  .legend-item { display: flex; align-items: center; gap: 6px;}
+  .swatch { width: 10px; height: 10px; border-radius: 2px;}
+
+  .panels {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px; margin-bottom: 24px;
+    align-items: stretch;
+  }
+  @media (max-width: 900px) {
+    .panels { grid-template-columns: 1fr; }
+  }
+  .panels > .chart-wrap {
+    display: flex; flex-direction: column;
+    min-width: 0;
+    max-width: none !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    width: 100%;
+  }
+  .panels > .chart-wrap > .board:last-child,
+  .panels > .chart-wrap > #bigMoves {
+    flex: 1;
+  }
+  .board { display: flex; flex-direction: column; gap: 6px; }
+  .bar {
+    position: relative; background: rgba(255,255,255,0.04);
+    border-radius: 6px; padding: 8px 10px; overflow: hidden;
+    font-size: 12px; display: flex; justify-content: space-between;
+    align-items: center;
+    font-family: ui-monospace, monospace;
+  }
+  .bar-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .bar-sub { font-size: 10px; color: #6a7290; }
+  .bar-name { color: #e8ecff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-fill {
+    position: absolute; top:0; left:0; bottom:0;
+    background: linear-gradient(90deg, rgba(124,158,255,0.35), rgba(182,124,255,0.15));
+    border-radius: 6px; transition: width 0.4s ease;
+  }
+  .bar span { position: relative; z-index: 1; }
+  .bar .name { color: #e8ecff; }
+  .bar .count { color: #8a93b8; font-variant-numeric: tabular-nums;}
+  .gini-label { text-align: center; margin-top: 8px; font-size: 13px; color: #b8bedb; }
+
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+  }
+  .block {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px; padding: 14px;
+    animation: slideIn 0.5s ease-out;
+    position: relative; overflow: hidden;
+  }
+  .block::before {
+    content: ''; position: absolute; top:0; left:0; right:0; height: 2px;
+    background: linear-gradient(90deg, #7c9eff, #b67cff);
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .block-round { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums;}
+  .block-time { font-size: 11px; color: #8a93b8; margin-top: 2px;}
+  .block-rows { margin-top: 10px; display: flex; flex-direction: column; gap: 4px;}
+  .row { display: flex; justify-content: space-between; font-size: 12px;}
+  .row span:first-child { color: #8a93b8; }
+  .row span:last-child { font-variant-numeric: tabular-nums; }
+  .proposer { font-family: ui-monospace, monospace; font-size: 10px; color: #b67cff;}
+
+  .log-wrap {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px; padding: 16px; margin-bottom: 24px;
+  }
+  .log {
+    max-height: 180px; overflow-y: auto;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px; line-height: 1.6;
+  }
+  .log-entry {
+    display: grid; grid-template-columns: 70px 60px 1fr auto;
+    gap: 10px; padding: 2px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+  .log-time { color: #5a6280; }
+  .log-method { font-weight: 600; }
+  .log-path { color: #b8bedb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+  .log-status { font-variant-numeric: tabular-nums; }
+  .ok { color: #4ade80; }
+  .err { color: #f87171; }
+  .pending { color: #fbbf24; }
+  .stat-value.warn { color: #fbbf24; }
+  .stat-value.bad { color: #f87171; }
+</style>
+<style id="milw0rm">
+  body {
+    font-family: "Courier New", Courier, ui-monospace, monospace !important;
+    background-color: #020a02 !important;
+    background-image:
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='4' height='4'><rect width='1' height='1' fill='%234dff4d' fill-opacity='0.35'/></svg>"),
+      radial-gradient(ellipse at center top, #0a3010 0%, #051805 50%, #020a02 100%) !important;
+    background-repeat: repeat, no-repeat !important;
+    background-attachment: fixed, fixed !important;
+    color: #4dff4d !important;
+    padding: 16px !important;
+    font-size: 13px !important;
+  }
+  /* center column container feel */
+  header, .stats, .chart-wrap, .panels, .log-wrap {
+    max-width: 1100px;
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
+  header {
+    border: 1px solid #2d5d2d !important;
+    box-shadow: inset 0 0 0 1px #000, 0 0 0 1px #1a3d1a;
+    border-radius: 0 !important;
+    background: #07200a !important;
+    padding: 10px 14px !important;
+    margin-bottom: 14px !important;
+  }
+  h1 {
+    font-size: 14px !important; font-weight: bold !important;
+    color: #7fff7f !important;
+    background: none !important;
+    -webkit-text-fill-color: #7fff7f !important;
+    letter-spacing: 1px !important;
+    text-shadow: 0 0 6px rgba(120,255,120,0.5);
+  }
+  h1::before { content: "[ "; color: #4dff4d; }
+  h1::after  { content: " ]"; color: #4dff4d; }
+  .endpoint {
+    background: #041404 !important;
+    border: 1px solid #2d5d2d !important;
+    border-radius: 0 !important;
+    padding: 4px 8px !important;
+  }
+  .endpoint::before { content: "url:~$ "; color: #3a8a3a; font-size: 12px;}
+  .endpoint input { color: #7fff7f !important; font-family: inherit !important; background: transparent !important;}
+  .endpoint button {
+    background: #2d5d2d !important; color: #c8ffc8 !important;
+    border: 1px solid #4dff4d !important;
+    border-radius: 0 !important; font-family: inherit !important;
+    font-weight: bold !important; padding: 2px 10px !important;
+  }
+  .endpoint button:hover { background: #4dff4d !important; color: #000 !important; }
+  .status { color: #4dff4d !important; }
+  .status::before { content: "[ "; color: #4dff4d; }
+  .status::after  { content: " ]"; color: #4dff4d; }
+  .dot { display: none !important; }
+  #statusText { color: #7fff7f; }
+
+  .stat, .chart-wrap, .log-wrap {
+    background: #07200a !important;
+    border: 1px solid #2d5d2d !important;
+    box-shadow: inset 0 0 0 1px #000, 0 0 0 1px #1a3d1a;
+    border-radius: 0 !important;
+    padding: 10px 12px !important;
+  }
+  .stat-label {
+    color: #3a8a3a !important;
+    text-transform: lowercase !important;
+    letter-spacing: 0 !important;
+  }
+  .stat-label::before { content: "» "; color: #7fff7f; font-weight: bold;}
+  .stat-value {
+    color: #c8ffc8 !important; font-weight: bold !important;
+    font-size: 18px !important;
+    text-shadow: 0 0 4px rgba(120,255,120,0.4);
+  }
+  .stat-value.warn { color: #ffff7f !important; }
+  .stat-value.bad { color: #ff5555 !important; }
+
+  .chart-title {
+    color: #7fff7f !important;
+    text-transform: lowercase !important;
+    letter-spacing: 0 !important;
+    border-bottom: 1px solid #2d5d2d;
+    padding-bottom: 4px;
+    text-shadow: 0 0 4px rgba(120,255,120,0.3);
+  }
+  .chart-title::before { content: "» "; color: #7fff7f; }
+  canvas { border-radius: 0 !important; image-rendering: pixelated; background: #04140a; }
+  #sankey { height: 480px; image-rendering: auto; }
+  .flow-legend {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px dashed #2d5d2d;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #04140a; border: 1px solid #2d5d2d;
+    padding: 3px 8px; font-size: 11px; cursor: pointer;
+    color: #7fff7f; user-select: none;
+  }
+  .chip:hover { border-color: #4dff4d; }
+  .chip.off { color: #2d5d2d; border-color: #1a3d1a; }
+  .chip.off .chip-swatch { opacity: 0.2; }
+  .chip-swatch { width: 10px; height: 10px; border: 1px solid #1a3d1a; }
+  .chip-sub { color: #3a8a3a; font-size: 10px; }
+  .chip.off .chip-sub { color: #1a3d1a; }
+  .chip-ctrl {
+    display: inline-flex; align-items: center;
+    background: #04140a; border: 1px solid #2d5d2d;
+    padding: 3px 10px; font-size: 11px; cursor: pointer;
+    color: #3a8a3a; user-select: none;
+  }
+  .chip-ctrl:hover { border-color: #4dff4d; color: #7fff7f; }
+  details summary { list-style: none; }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::before { content: "[+] "; color: #ffff7f; font-weight: bold; }
+  details[open] summary::before { content: "[-] "; }
+
+  .legend { color: #3a8a3a !important; }
+  .legend-item::before { content: "» "; color: #7fff7f; }
+  .swatch { border-radius: 0 !important; border: 1px solid #2d5d2d; }
+
+  .bar {
+    background: #04140a !important;
+    border: 1px solid #1a3d1a !important;
+    border-radius: 0 !important;
+    padding: 5px 8px !important;
+  }
+  .bar:hover { background: #07200a !important; border-color: #2d5d2d !important;}
+  .bar-fill {
+    background: #1a3d1a !important;
+    border-radius: 0 !important;
+    border-right: 1px solid #4dff4d;
+  }
+  .bar-name { color: #7fff7f !important; text-shadow: 0 0 3px rgba(120,255,120,0.3);}
+  .bar-name::before { content: "» "; color: #4dff4d; }
+  .bar-sub { color: #3a8a3a !important; padding-left: 12px; }
+  .count { color: #ffff7f !important; font-weight: bold; }
+  .gini-label { color: #7fff7f !important; }
+
+  .log-time { color: #2d5d2d !important; }
+  .log-method { color: #3a8a3a !important; font-weight: normal !important; }
+  .log-path { color: #4dff4d !important; }
+  .log-status { color: #7fff7f !important; }
+  .ok { color: #7fff7f !important; }
+  .err { color: #ff5555 !important; }
+  .pending { color: #ffff7f !important; }
+  .log-entry { border-bottom: 1px dotted #1a3d1a !important; }
+  .log::-webkit-scrollbar { width: 8px; }
+  .log::-webkit-scrollbar-track { background: #04140a; }
+  .log::-webkit-scrollbar-thumb { background: #2d5d2d; }
+
+  .inner-btn {
+    background: transparent; border: 1px solid #2d5d2d; color: #3a8a3a;
+    font-family: inherit; font-size: 10px; padding: 2px 8px; cursor: pointer;
+    flex-shrink: 0;
+  }
+  .inner-btn:hover { border-color: #4dff4d; color: #7fff7f; }
+  .inner-btn.active { border-color: #4dff4d; color: #4dff4d; }
+
+  #pageFooter {
+    max-width: 1100px; margin: 0 auto 16px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 11px; color: #3a8a3a; padding: 10px 14px;
+    background: #07200a; border: 1px solid #2d5d2d;
+  }
+  #pageFooter a { color: #4dff4d; text-decoration: none; }
+  #pageFooter a:hover { color: #7fff7f; }
+
+  #copyToast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #07200a; border: 1px solid #4dff4d; color: #7fff7f;
+    font-family: "Courier New", monospace; font-size: 11px;
+    padding: 6px 16px; z-index: 500; opacity: 0;
+    transition: opacity 0.15s; pointer-events: none; white-space: nowrap;
+  }
+  #copyToast.show { opacity: 1; }
+
+  #sankeyTip {
+    display: none;
+    position: fixed;
+    background: #07200a;
+    border: 1px solid #2d5d2d;
+    box-shadow: 0 0 16px rgba(77,255,77,0.12), inset 0 0 0 1px #000;
+    padding: 10px 13px;
+    font-family: "Courier New", Courier, ui-monospace, monospace;
+    font-size: 11px;
+    color: #4dff4d;
+    pointer-events: none;
+    z-index: 200;
+    min-width: 200px;
+    max-width: 280px;
+  }
+  #sankeyTip .stip-head {
+    color: #7fff7f; font-size: 12px; font-weight: bold;
+    margin-bottom: 2px; text-shadow: 0 0 5px rgba(120,255,120,0.4);
+  }
+  #sankeyTip .stip-addr {
+    font-size: 10px; color: #3a8a3a;
+    margin-bottom: 7px; word-break: break-all;
+  }
+  #sankeyTip .stip-row {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 1px 0; line-height: 1.6;
+  }
+  #sankeyTip .stip-label { color: #3a8a3a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #sankeyTip .stip-val { color: #c8ffc8; font-weight: bold; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  #sankeyTip .stip-divider {
+    border: none; border-top: 1px dashed #2d5d2d; margin: 6px 0;
+  }
+  #sankeyTip .stip-section { color: #7fff7f; font-size: 10px; margin: 5px 0 2px; }
+
+  #skyTip {
+    display: none;
+    position: fixed;
+    background: #07200a;
+    border: 1px solid #2d5d2d;
+    box-shadow: 0 0 16px rgba(77,255,77,0.12), inset 0 0 0 1px #000;
+    padding: 10px 13px;
+    font-family: "Courier New", Courier, ui-monospace, monospace;
+    font-size: 11px;
+    color: #4dff4d;
+    pointer-events: none;
+    z-index: 200;
+    min-width: 190px;
+  }
+  #skyTip .tip-round {
+    color: #7fff7f; font-size: 12px; font-weight: bold;
+    margin-bottom: 7px; text-shadow: 0 0 5px rgba(120,255,120,0.4);
+  }
+  #skyTip .tip-round::before { content: "» "; color: #4dff4d; }
+  #skyTip .tip-row {
+    display: flex; justify-content: space-between; gap: 16px;
+    padding: 1px 0; line-height: 1.6;
+  }
+  #skyTip .tip-label { color: #3a8a3a; }
+  #skyTip .tip-val { color: #c8ffc8; font-weight: bold; font-variant-numeric: tabular-nums; }
+  #skyTip .tip-divider {
+    border: none; border-top: 1px dashed #2d5d2d;
+    margin: 6px 0;
+  }
+  #skyTip .tip-fees { color: #ffff7f; font-weight: bold; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>algorand :: bl0ck stream</h1>
+    <div class="endpoint">
+      <input id="url" value="https://mainnet-api.4160.nodely.dev" list="endpointList" autocomplete="off">
+      <datalist id="endpointList">
+        <option value="https://mainnet-api.4160.nodely.dev"></option>
+        <option value="https://testnet-api.4160.nodely.dev"></option>
+        <option value="https://betanet-api.4160.nodely.dev"></option>
+        <option value="https://fnet-api.4160.nodely.dev"></option>
+      </datalist>
+      <button onclick="restart()">Apply</button>
+    </div>
+    <div class="status"><span class="dot" id="dot"></span><span id="statusText">connecting…</span></div>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-label">Latest Round</div><div class="stat-value" id="sLatest">—</div></div>
+    <div class="stat"><div class="stat-label">Blocks Seen</div><div class="stat-value" id="sCount">0</div></div>
+    <div class="stat"><div class="stat-label">Total Txns</div><div class="stat-value" id="sTxns">0</div></div>
+    <div class="stat"><div class="stat-label">Total Fees (ALGO)</div><div class="stat-value" id="sFees">0</div></div>
+    <div class="stat"><div class="stat-label">Fees / Block (avg)</div><div class="stat-value" id="sAvgFees">—</div></div>
+    <div class="stat"><div class="stat-label">Since Last Block</div><div class="stat-value" id="sSince">—</div></div>
+    <div class="stat"><div class="stat-label">Avg Block Time</div><div class="stat-value" id="sBlockTime">—</div></div>
+    <div class="stat"><div class="stat-label">Txns / Block (avg)</div><div class="stat-value" id="sAvgTxn">—</div></div>
+    <div class="stat"><div class="stat-label">Unique Proposers</div><div class="stat-value" id="sProposers">—</div></div>
+  </div>
+
+  <div class="chart-wrap">
+    <div class="chart-title" style="display:flex; justify-content:space-between; align-items:center;">
+      <span>Transaction Skyline · each column is one block · each tile is one txn</span>
+      <button id="innerToggle" onclick="toggleInner()" class="inner-btn">[ inner txns: off ]</button>
+    </div>
+    <canvas id="sky"></canvas>
+    <div class="legend" id="legend"></div>
+  </div>
+  <div id="skyTip"></div>
+
+  <div class="panels">
+    <div class="chart-wrap">
+      <div class="chart-title">Top Transfers</div>
+      <div id="assets" class="board"></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Busiest Accounts (last 200 blocks)</div>
+      <div id="accounts" class="board"></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Concentration · whales vs crowd</div>
+      <canvas id="gini"></canvas>
+      <div class="gini-label" id="giniLabel">—</div>
+      <div class="chart-title" style="margin-top:14px;">Biggest Moves</div>
+      <div id="bigMoves" class="board"></div>
+    </div>
+  </div>
+
+  <div class="chart-wrap">
+    <div class="chart-title" style="display:flex; justify-content:space-between; align-items:center;">
+      <span>flow :: top senders » top receivers (last ~5000 txns)</span>
+      <button onclick="toggleInner()" class="inner-btn">[ inner txns: off ]</button>
+    </div>
+    <canvas id="sankey"></canvas>
+    <div id="flowLegend" class="flow-legend"></div>
+  </div>
+  <div id="sankeyTip"></div>
+
+  <div class="log-wrap">
+    <details id="logDetails">
+      <summary class="chart-title" style="cursor:pointer; user-select:none; margin:0; border:none; padding:0;">activity log</summary>
+      <div class="log" id="log" style="margin-top:8px;"></div>
+    </details>
+  </div>
+
+  <footer id="pageFooter">
+    <span>© 2026 nullun</span>
+    <span>powered by <a href="https://nodely.io" target="_blank" rel="noopener">Nodely</a> free API</span>
+  </footer>
+  <div id="copyToast"></div>
+
+<script>
+let endpoint = document.getElementById('url').value;
+let queue = [];
+let history = []; // {round, txns, ts}
+let running = 0;
+let stats = { count: 0, totalTxns: 0 };
+
+const $ = id => document.getElementById(id);
+
+function setStatus(text, ok=true) {
+  $('statusText').textContent = text;
+  $('statusText').classList.toggle('err', !ok);
+  $('dot').classList.toggle('err', !ok);
+}
+
+let lastBlockAt = null;
+
+function logEntry(method, path, status, cls) {
+  const log = $('log');
+  const el = document.createElement('div');
+  el.className = 'log-entry';
+  const t = new Date().toLocaleTimeString();
+  el.innerHTML = `<span class="log-time">${t}</span><span class="log-method ${cls}">${method}</span><span class="log-path">${path}</span><span class="log-status ${cls}">${status}</span>`;
+  log.insertBefore(el, log.firstChild);
+  while (log.children.length > 100) log.removeChild(log.lastChild);
+  return el;
+}
+
+async function fetchJSON(path) {
+  const start = performance.now();
+  const entry = logEntry('GET', path, '…', 'pending');
+  try {
+    const r = await fetch(endpoint + path);
+    const ms = Math.round(performance.now() - start);
+    const cls = r.ok ? 'ok' : 'err';
+    entry.querySelector('.log-status').className = 'log-status ' + cls;
+    entry.querySelector('.log-status').textContent = r.status + ' · ' + ms + 'ms';
+    entry.querySelector('.log-method').className = 'log-method ' + cls;
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  } catch (e) {
+    const ms = Math.round(performance.now() - start);
+    entry.querySelector('.log-status').className = 'log-status err';
+    entry.querySelector('.log-status').textContent = 'FAIL · ' + ms + 'ms';
+    entry.querySelector('.log-method').className = 'log-method err';
+    throw e;
+  }
+}
+
+async function loop(token) {
+  try {
+    setStatus('fetching status…');
+    const status = await fetchJSON('/v2/status');
+    let round = status['last-round'];
+    $('sLatest').textContent = round.toLocaleString();
+    // process the current latest first
+    enqueueRound(round, token);
+
+    while (token === running) {
+      setStatus('waiting for round ' + (round + 1));
+      await fetchJSON('/v2/status/wait-for-block-after/' + round);
+      round += 1;
+      if (token !== running) return;
+      enqueueRound(round, token);
+      $('sLatest').textContent = round.toLocaleString();
+    }
+  } catch (e) {
+    setStatus('error: ' + e.message, false);
+    if (token === running) setTimeout(() => { if (token === running) loop(token); }, 2000);
+  }
+}
+
+async function enqueueRound(round, token) {
+  try {
+    const block = await fetchJSON('/v2/blocks/' + round + '?format=json');
+    if (token !== running) return;
+    queue.push(block);
+    processQueue();
+  } catch (e) {
+    console.warn('block fetch failed', round, e);
+  }
+}
+
+function processQueue() {
+  while (queue.length) {
+    const b = queue.shift();
+    render(b);
+  }
+}
+
+// Transaction type palette (milw0rm green-dominant)
+const TYPE_COLORS = {
+  pay:    '#7fff7f', // bright lime
+  axfer:  '#4dff4d', // green
+  acfg:   '#c8ffc8', // pale lime
+  appl:   '#2d8f2d', // mid green
+  keyreg: '#ffff7f', // pale yellow accent
+  afrz:   '#5599ff', // cold blue
+  stpf:   '#aaff55', // yellow-green
+  other:  '#1a3d1a'
+};
+const TYPE_NAMES = {
+  pay:'Payment', axfer:'Asset Xfer', acfg:'Asset Cfg',
+  appl:'App Call', keyreg:'Key Reg', afrz:'Freeze', stpf:'State Proof', other:'Other'
+};
+
+// Rolling Sankey state - last N transactions
+let recentTxns = []; // {sender, receiver, type, asset, amt}
+const SANKEY_WINDOW = 5000;
+let sankeyHitState = null; // populated by drawSankey(), used by hover handler
+
+// Inner transaction toggle
+let includeInner = false;
+function toggleInner() {
+  includeInner = !includeInner;
+  const label = includeInner ? '[ inner txns: on ]' : '[ inner txns: off ]';
+  document.querySelectorAll('.inner-btn').forEach(btn => {
+    btn.textContent = label;
+    btn.classList.toggle('active', includeInner);
+  });
+  // History is preserved — the filter is applied at render time, not collection time
+  drawSkyline();
+  drawSankey();
+}
+
+// Collect transactions from a (possibly nested) signed-txn object.
+// Always recurses into dt.itx; the inner flag controls display, not collection.
+function collectTxns(stxn, isInner = false) {
+  const result = [];
+  const t = extractTxn(stxn);
+  if (t) result.push({ ...t, inner: isInner });
+  for (const itxn of (stxn?.dt?.itx || [])) {
+    result.push(...collectTxns(itxn, true));
+  }
+  return result;
+}
+
+// Click-to-copy helpers
+function copyIt(text) {
+  text = String(text);
+  navigator.clipboard.writeText(text).catch(() => {
+    const ta = Object.assign(document.createElement('textarea'),
+      { value: text, style: 'position:fixed;opacity:0' });
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+  });
+  const toast = $('copyToast');
+  const preview = text.length > 20 ? text.slice(0, 8) + '…' + text.slice(-6) : text;
+  toast.textContent = '» copied: ' + preview;
+  toast.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => toast.classList.remove('show'), 1600);
+}
+
+// Unique proposers seen
+let uniqueProposers = new Set();
+
+// Rolling state
+let skylineCols = []; // each: { round, txns, fees }
+const MAX_COLS = 120;
+function currentMaxCols() {
+  // On narrow screens use fewer, wider columns so tiles stay roughly square
+  return window.innerWidth < 600 ? 40 : MAX_COLS;
+}
+let assetCounts = new Map();   // assetId -> count
+let accountCounts = new Map(); // address -> count
+let recentSenders = []; // ring of senders for concentration calc
+let totalFees = 0; // microAlgos
+let lastBlockFees = 0;
+
+// Asset metadata cache: id -> {name, unit} | 'pending' | 'failed'
+const assetCache = new Map();
+
+// Biggest individual txns seen recently - top 8, sorted by human value desc
+let bigMoves = []; // {human, kind, sender, receiver, ts, round}
+
+async function lookupAsset(id) {
+  if (id == null || id === 'new') return;
+  if (assetCache.has(id)) return;
+  assetCache.set(id, 'pending');
+  try {
+    const j = await fetchJSON('/v2/assets/' + id);
+    const p = j.params || {};
+    assetCache.set(id, {
+      name: p.name || null,
+      unit: p['unit-name'] || null,
+      decimals: typeof p.decimals === 'number' ? p.decimals : 0
+    });
+    drawBoards();
+  } catch (e) {
+    assetCache.set(id, 'failed');
+  }
+}
+
+function bumpMap(m, k, n=1) { m.set(k, (m.get(k) || 0) + n); }
+
+function decayMap(m, factor=0.985) {
+  for (const [k, v] of m) {
+    const nv = v * factor;
+    if (nv < 0.5) m.delete(k); else m.set(k, nv);
+  }
+}
+
+function extractTxn(stxn) {
+  const t = (stxn && stxn.txn) ? stxn.txn : stxn;
+  if (!t) return null;
+  const type = t.type || 'other';
+  let amt = 0, asset = null, sender = t.snd || '', receiver = null;
+  const fee = t.fee || 0;
+  if (type === 'pay') { amt = t.amt || 0; receiver = t.rcv || null; }
+  else if (type === 'axfer') { amt = t.aamt || 0; asset = t.xaid || null; receiver = t.arcv || null; }
+  else if (type === 'acfg') { asset = t.caid || 'new'; }
+  if (sender && typeof sender !== 'string') sender = String(sender);
+  if (receiver && typeof receiver !== 'string') receiver = String(receiver);
+  return { type, amt, asset, sender, receiver, fee };
+}
+
+function render(block) {
+  const blk = block.block || block;
+  const round = blk.rnd ?? blk.round ?? 0;
+  const ts = blk.ts ?? Math.floor(Date.now()/1000);
+  const rawTxns = Array.isArray(blk.txns) ? blk.txns : [];
+  // Fees are always taken from outer txns only (inner txns carry no independent fee)
+  const blockFees = rawTxns.reduce((s, stxn) => {
+    const t = (stxn && stxn.txn) ? stxn.txn : stxn;
+    return s + (t?.fee || 0);
+  }, 0);
+  const parsed = rawTxns.flatMap(stxn => collectTxns(stxn)).filter(Boolean);
+  // Outer txns only for stats and boards — inner txns are always stored but
+  // counted separately so toggling display never changes the headline numbers.
+  const outerParsed = parsed.filter(t => !t.inner);
+
+  // Track proposer
+  const proposer = blk.prp || blk.proposer || null;
+  if (proposer) uniqueProposers.add(String(proposer));
+
+  stats.count += 1;
+  stats.totalTxns += outerParsed.length;
+  lastBlockAt = performance.now();
+  history.push({ round, txns: outerParsed.length, ts });
+  if (history.length > 200) history.shift();
+
+  $('sCount').textContent = stats.count.toLocaleString();
+  $('sTxns').textContent = stats.totalTxns.toLocaleString();
+  $('sAvgTxn').textContent = (stats.totalTxns / stats.count).toFixed(1);
+  $('sLatest').textContent = round.toLocaleString();
+
+  if (history.length >= 2) {
+    let deltas = [];
+    for (let i = 1; i < history.length; i++) {
+      const d = history[i].ts - history[i-1].ts;
+      if (d > 0 && d < 60) deltas.push(d);
+    }
+    if (deltas.length) {
+      const recent = deltas.slice(-20);
+      const avg = recent.reduce((a,b)=>a+b,0)/recent.length;
+      $('sBlockTime').textContent = avg.toFixed(2) + 's';
+    }
+  }
+
+  // Aggregate boards/gini/bigMoves from outer txns only
+  decayMap(assetCounts); decayMap(accountCounts);
+  for (const t of outerParsed) {
+    if (t.asset != null) {
+      bumpMap(assetCounts, t.asset);
+      lookupAsset(t.asset);
+    } else if (t.type === 'pay') {
+      bumpMap(assetCounts, 'ALGO');
+    }
+    if (t.sender) {
+      bumpMap(accountCounts, t.sender);
+      recentSenders.push(t.sender);
+    }
+  }
+  while (recentSenders.length > 5000) recentSenders.shift();
+  // Store ALL parsed txns (inner flagged) so the toggle can show/hide them later
+  for (const t of parsed) recentTxns.push(t);
+  while (recentTxns.length > SANKEY_WINDOW) recentTxns.shift();
+
+  // Track biggest moves from outer txns only
+  for (const t of outerParsed) {
+    if (!t.sender || !t.receiver || !t.amt) continue;
+    const human = humanAmount(t);
+    if (human == null || human <= 0) continue;
+    const kind = t.type === 'pay' ? 'ALGO' : t.asset;
+    const entry = { human, kind, sender: t.sender, receiver: t.receiver, ts, round };
+    if (bigMoves.length < 8 || human > bigMoves[bigMoves.length - 1].human) {
+      bigMoves.push(entry);
+      bigMoves.sort((a, b) => b.human - a.human);
+      if (bigMoves.length > 8) bigMoves.length = 8;
+    }
+  }
+  totalFees += blockFees;
+  lastBlockFees = blockFees;
+  $('sFees').textContent = (totalFees / 1e6).toLocaleString(undefined, {maximumFractionDigits: 3});
+  $('sAvgFees').textContent = (totalFees / stats.count / 1e6).toLocaleString(undefined, {maximumFractionDigits: 4});
+  if (uniqueProposers.size > 0 && stats.count > 0) {
+    const pct = (uniqueProposers.size / stats.count * 100).toFixed(1);
+    $('sProposers').textContent = uniqueProposers.size.toLocaleString() + ' (' + pct + '%)';
+  } else {
+    $('sProposers').textContent = '—';
+  }
+
+  skylineCols.push({ round, txns: parsed, fees: blockFees });
+  while (skylineCols.length > MAX_COLS) skylineCols.shift();
+
+  drawSkyline();
+  drawBoards();
+  drawGini();
+  drawBigMoves();
+  drawSankey();
+}
+
+function drawSkyline() {
+  const c = $('sky');
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  c.width = w * dpr; c.height = h * dpr;
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  // background - subtle dark green
+  const bg = ctx.createLinearGradient(0,0,0,h);
+  bg.addColorStop(0, '#07200a');
+  bg.addColorStop(1, '#020a02');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0,0,w,h);
+
+  if (!skylineCols.length) return;
+
+  const nCols = currentMaxCols();
+  const colW = w / nCols;
+  // Only draw the most recent nCols columns; filter inner txns based on toggle
+  const visibleCols = skylineCols.slice(-nCols);
+  const drawCols = visibleCols.map(col => ({
+    ...col,
+    txns: includeInner ? col.txns : col.txns.filter(t => !t.inner)
+  }));
+  const maxTxns = Math.max(20, ...drawCols.map(c => c.txns.length));
+  const baseY = h - 8;
+  const maxH = h - 16;
+
+  drawCols.forEach((col, i) => {
+    const x = i * colW;
+    const colHeight = (col.txns.length / maxTxns) * maxH;
+    if (colHeight < 1) return;
+    // each txn = one tile in the column
+    const tileH = colHeight / Math.max(1, col.txns.length);
+    col.txns.forEach((t, j) => {
+      const y = baseY - (j+1) * tileH;
+      const color = TYPE_COLORS[t.type] || TYPE_COLORS.other;
+      // intensity by amount (log)
+      const intensity = t.amt > 0 ? Math.min(1, Math.log10(t.amt+1)/10) : 0.4;
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.55 + intensity * 0.45;
+      ctx.fillRect(x + 0.5, y, colW - 1, Math.max(1, tileH - 0.3));
+    });
+    ctx.globalAlpha = 1;
+    // glow on top of column
+    const top = baseY - colHeight;
+    const g = ctx.createRadialGradient(x + colW/2, top, 0, x + colW/2, top, colW*2);
+    g.addColorStop(0, 'rgba(255,255,255,0.15)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(x - colW, top - colW, colW*3, colW*3);
+  });
+
+  // baseline - lime phosphor line
+  ctx.fillStyle = '#7fff7f';
+  ctx.fillRect(0, baseY, w, 1);
+  const grd = ctx.createLinearGradient(0, baseY-4, 0, baseY+8);
+  grd.addColorStop(0, 'rgba(127,255,127,0.25)');
+  grd.addColorStop(1, 'rgba(127,255,127,0)');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, baseY-4, w, 12);
+
+  // Fee ribbon along the very bottom - amber stripe per column
+  const maxFee = Math.max(1000, ...visibleCols.map(c => c.fees || 0));
+  visibleCols.forEach((col, i) => {
+    const x = i * colW;
+    const fee = col.fees || 0;
+    if (fee <= 0) return;
+    const intensity = fee / maxFee;
+    const stripeH = 2 + intensity * 5;
+    ctx.fillStyle = `rgba(255, 255, 127, ${0.3 + intensity * 0.7})`;
+    ctx.fillRect(x + 0.5, h - stripeH, colW - 1, stripeH);
+  });
+
+  // Latest block fee callout
+  if (drawCols.length) {
+    const latest = drawCols[drawCols.length - 1];
+    const algos = (latest.fees / 1e6).toFixed(4);
+    ctx.fillStyle = '#ffff7f';
+    ctx.font = 'bold 11px "Courier New", monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(`» block #${latest.round} :: ${algos} ALGO fees :: ${latest.txns.length} txns`, w - 8, 16);
+    ctx.textAlign = 'left';
+  }
+
+  // legend
+  const legend = $('legend');
+  if (!legend.children.length) {
+    legend.innerHTML = Object.keys(TYPE_NAMES).map(k =>
+      `<div class="legend-item"><div class="swatch" style="background:${TYPE_COLORS[k]}"></div>${TYPE_NAMES[k]}</div>`
+    ).join('');
+  }
+}
+
+function drawBoards() {
+  const esc = s => String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const renderBoard = (id, m, fmt, limit) => {
+    const arr = [...m.entries()].sort((a,b) => b[1]-a[1]).slice(0, limit || 8);
+    if (!arr.length) { $(id).innerHTML = ''; return; }
+    const max = arr[0][1];
+    $(id).innerHTML = arr.map(([k,v]) => {
+      const pct = (v/max)*100;
+      const { name, sub, copy } = fmt(k);
+      const click = copy ? `onclick="copyIt('${esc(copy)}')" style="cursor:pointer" title="click to copy"` : '';
+      return `<div class="bar" ${click}><div class="bar-fill" style="width:${pct}%"></div>
+        <div class="bar-text"><span class="bar-name">${name}</span><span class="bar-sub">${sub}</span></div>
+        <span class="count">${Math.round(v)}</span></div>`;
+    }).join('');
+  };
+
+  renderBoard('assets', assetCounts, k => {
+    if (k === 'new') return { name: 'New asset created', sub: 'acfg', copy: null };
+    if (k === 'ALGO') return { name: 'ALGO', sub: 'native payment', copy: null };
+    const copy = String(k);
+    const meta = assetCache.get(k);
+    if (meta && typeof meta === 'object') {
+      const display = meta.name || meta.unit || `Asset ${k}`;
+      const subParts = [];
+      if (meta.unit) subParts.push(meta.unit);
+      subParts.push(`ID ${k}`);
+      return { name: display, sub: subParts.join(' · '), copy };
+    }
+    return { name: `Asset ${k}`, sub: meta === 'pending' ? 'loading…' : `ID ${k}`, copy };
+  }, 12);
+
+  renderBoard('accounts', accountCounts, k => ({
+    name: k.slice(0,8) + '…' + k.slice(-6),
+    sub: 'sender',
+    copy: k
+  }), 12);
+}
+
+
+
+// ===== Force-directed account graph =====
+
+// Asset color palette - ALGO is fixed, ASAs cycle through phosphor-friendly hues
+const ASSET_COLORS = [
+  '#ffff7f', '#aaff55', '#7fffaa', '#55ffff', '#ffaa55',
+  '#ff7faa', '#c8ff7f', '#7faaff', '#ffd47f', '#aa7fff'
+];
+function colorForKind(kind) {
+  if (kind === 'ALGO') return '#7fff7f';
+  // Hash asset id to a stable palette index
+  let h = 0;
+  const s = String(kind);
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return ASSET_COLORS[Math.abs(h) % ASSET_COLORS.length];
+}
+const excludedKinds = new Set();
+let knownKinds    = new Set(); // all kinds ever seen, for new-kind defaulting
+let currentKinds  = new Set(); // kinds in the current draw, for unselect-all
+
+// Convert a raw txn amount into a human-scaled value (whole units).
+// pay: microAlgos -> ALGO (÷ 1e6)
+// axfer: raw -> units (÷ 10^decimals from cached asset params)
+// If asset metadata hasn't loaded yet, returns null so callers can skip.
+function humanAmount(t) {
+  if (!t.amt) return 0;
+  if (t.type === 'pay') return t.amt / 1e6;
+  if (t.type === 'axfer') {
+    const meta = assetCache.get(t.asset);
+    if (meta && typeof meta === 'object') {
+      const d = meta.decimals || 0;
+      return t.amt / Math.pow(10, d);
+    }
+    return null; // unknown decimals -> skip until metadata arrives
+  }
+  return 0;
+}
+
+function toggleKind(kind) {
+  if (excludedKinds.has(kind)) excludedKinds.delete(kind);
+  else excludedKinds.add(kind);
+  drawSankey();
+}
+function selectAllKinds() {
+  excludedKinds.clear();
+  drawSankey();
+}
+function unselectAllKinds() {
+  for (const k of currentKinds) excludedKinds.add(k);
+  drawSankey();
+}
+
+function drawFlowLegend(seenKinds) {
+  const el = $('flowLegend');
+  if (!seenKinds || seenKinds.size === 0) { el.innerHTML = ''; return; }
+
+  // New kinds: if anything is currently excluded, start the newcomer excluded too
+  for (const [kind] of seenKinds) {
+    const k = String(kind);
+    if (!knownKinds.has(k)) {
+      if (excludedKinds.size > 0) excludedKinds.add(k);
+      knownKinds.add(k);
+    }
+  }
+
+  // Track current kinds for unselect-all
+  currentKinds = new Set([...seenKinds.keys()].map(String));
+
+  // Sort by weight desc so most-active kinds come first
+  const sorted = [...seenKinds.entries()].sort((a,b)=>b[1]-a[1]);
+  const chips = sorted.map(([kind]) => {
+    const color = colorForKind(kind);
+    const off = excludedKinds.has(String(kind));
+    let label, sub;
+    if (kind === 'ALGO') {
+      label = 'ALGO'; sub = 'native';
+    } else {
+      const meta = assetCache.get(kind);
+      if (meta && typeof meta === 'object') {
+        label = meta.unit || meta.name || ('ASA ' + kind);
+        sub = 'ID ' + kind;
+      } else {
+        label = 'ASA ' + kind; sub = '…';
+      }
+    }
+    const safeKind = String(kind).replace(/'/g, "\\'");
+    return `<span class="chip ${off?'off':''}" onclick="toggleKind('${safeKind}')">
+      <span class="chip-swatch" style="background:${color}"></span>
+      <span>${label}</span>
+      <span class="chip-sub">${sub}</span>
+    </span>`;
+  }).join('');
+
+  el.innerHTML =
+    `<span class="chip-ctrl" onclick="selectAllKinds()">select all</span>` +
+    `<span class="chip-ctrl" onclick="unselectAllKinds()">unselect all</span>` +
+    chips;
+}
+
+// ===== Top Flows: simple ranked sender→receiver ribbons =====
+function drawSankey() {
+  const c = $('sankey');
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  c.width = w * dpr; c.height = h * dpr;
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = '#04140a';
+  ctx.fillRect(0, 0, w, h);
+
+  // Apply the inner-txn display filter before any aggregation
+  const viewTxns = includeInner ? recentTxns : recentTxns.filter(t => !t.inner);
+
+  // Aggregate flows by (sender, receiver, kind)
+  const flows = new Map(); // key -> { from, to, kind, value, count }
+  const senderCounts = new Map();   // for ranking: total transfer count per sender
+  const receiverCounts = new Map(); // for ranking: total transfer count per receiver
+  const senderValue = new Map();    // for ribbon heights: log-scaled value per sender
+  const receiverValue = new Map();  // for ribbon heights: log-scaled value per receiver
+  const seenKinds = new Map();
+  for (const t of viewTxns) {
+    if (!t.sender || !t.receiver || !t.amt) continue;
+    const kind = t.type === 'pay' ? 'ALGO' : (t.asset != null ? t.asset : null);
+    if (kind == null) continue;
+    const human = humanAmount(t);
+    if (human == null || human <= 0) continue;
+    const weight = Math.log10(human + 1);
+    bumpMap(seenKinds, kind, weight);
+    if (excludedKinds.has(String(kind))) continue;
+    const k = t.sender + '\x1f' + t.receiver + '\x1f' + kind;
+    if (!flows.has(k)) flows.set(k, { from: t.sender, to: t.receiver, kind, value: 0, count: 0, rawAmt: 0 });
+    const f = flows.get(k);
+    f.value += weight; f.count++; f.rawAmt += human;
+    bumpMap(senderCounts, t.sender, 1);
+    bumpMap(receiverCounts, t.receiver, 1);
+    bumpMap(senderValue, t.sender, weight);
+    bumpMap(receiverValue, t.receiver, weight);
+  }
+
+  drawFlowLegend(seenKinds);
+
+  if (flows.size === 0) {
+    ctx.fillStyle = '#3a8a3a';
+    ctx.font = '12px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('waiting for transfers…', w/2, h/2);
+    return;
+  }
+
+  // Top N senders and receivers by transaction count; the rest collapse into "others"
+  const TOP_N = 20;
+  const topList = (m) => {
+    const sorted = [...m.entries()].sort((a,b)=>b[1]-a[1]);
+    const top = sorted.slice(0, TOP_N).map(e=>e[0]);
+    const rest = sorted.slice(TOP_N).reduce((s,e)=>s+e[1], 0);
+    return { top, rest, set: new Set(top) };
+  };
+  const senders = topList(senderCounts);
+  const receivers = topList(receiverCounts);
+
+  // Bucket flows: any sender/receiver not in top becomes "others"
+  const bucketed = new Map();
+  for (const f of flows.values()) {
+    const a = senders.set.has(f.from) ? f.from : '__others_s__';
+    const b = receivers.set.has(f.to) ? f.to : '__others_r__';
+    const k = a + '\x1f' + b;
+    if (!bucketed.has(k)) bucketed.set(k, { from: a, to: b, value: 0, count: 0, kinds: new Map() });
+    const x = bucketed.get(k);
+    x.value += f.value; x.count += f.count;
+    bumpMap(x.kinds, f.kind, f.value);
+  }
+
+  // Final ordered columns
+  const senderCol = [...senders.top];
+  if (senders.rest > 0) senderCol.push('__others_s__');
+  const receiverCol = [...receivers.top];
+  if (receivers.rest > 0) receiverCol.push('__others_r__');
+
+  // Per-column totals (for layout sizing)
+  const colTotal = (col, isSender) => {
+    const m = new Map();
+    for (const x of bucketed.values()) {
+      const key = isSender ? x.from : x.to;
+      bumpMap(m, key, x.value);
+    }
+    return col.map(k => ({ key: k, val: m.get(k) || 0 }));
+  };
+  const senderEntries = colTotal(senderCol, true);
+
+  // Reorder receivers to minimize crossings: for each receiver, compute the weighted
+  // average sender index that feeds it, then sort receivers by that average.
+  const receiverCrossingScore = new Map();
+  for (const r of bucketed.values()) {
+    const si = senderCol.indexOf(r.from);
+    if (si < 0) continue;
+    const prev = receiverCrossingScore.get(r.to) || { sum: 0, w: 0 };
+    prev.sum += si * r.value;
+    prev.w += r.value;
+    receiverCrossingScore.set(r.to, prev);
+  }
+  receiverCol.sort((a, b) => {
+    const sa = receiverCrossingScore.get(a);
+    const sb = receiverCrossingScore.get(b);
+    const va = sa ? sa.sum / sa.w : 999;
+    const vb = sb ? sb.sum / sb.w : 999;
+    return va - vb;
+  });
+
+  const receiverEntries = colTotal(receiverCol, false);
+  const totalValue = senderEntries.reduce((s,e)=>s+e.val, 0);
+  if (totalValue === 0) return;
+
+  // Layout - scale padding and font to canvas width so mobile stays readable
+  const isNarrow = w < 600;
+  const padX = isNarrow ? 70 : 180;
+  const padY = 20, colW = isNarrow ? 8 : 12, gap = isNarrow ? 2 : 6;
+  const labelFont = isNarrow ? '9px "Courier New", monospace' : '11px "Courier New", monospace';
+  const xL = padX, xR = w - padX - colW;
+  const innerH = h - padY*2;
+
+  const layoutCol = (entries) => {
+    const totalGap = gap * Math.max(0, entries.length - 1);
+    const usableH = Math.max(0, innerH - totalGap);
+    const minH = 3; // visible threshold - below this, entry is collapsed
+
+    const vals = entries.map(e => e.val);
+    const totalVal = vals.reduce((s,v) => s+v, 0) || 1;
+
+    // Single pass: entries whose proportional share is below minH get height 0 (hidden).
+    // Remaining entries share all available space proportionally.
+    const visible = new Array(entries.length).fill(true);
+    let remainingH = usableH;
+    let remainingVal = totalVal;
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (let i = 0; i < entries.length; i++) {
+        if (!visible[i]) continue;
+        const share = (vals[i] / remainingVal) * remainingH;
+        if (share < minH) {
+          visible[i] = false;
+          remainingVal -= vals[i];
+          changed = true;
+        }
+      }
+      if (remainingVal <= 0) break;
+    }
+
+    const heights = new Array(entries.length);
+    let totalVisibleH = 0;
+    for (let i = 0; i < entries.length; i++) {
+      if (visible[i] && remainingVal > 0) {
+        heights[i] = (vals[i] / remainingVal) * remainingH;
+        totalVisibleH += heights[i];
+      } else {
+        heights[i] = 0;
+      }
+    }
+
+    // Compact layout: skip gaps for zero-height entries
+    let y = padY;
+    const map = new Map();
+    let first = true;
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      if (heights[i] > 0) {
+        if (!first) y += gap;
+        map.set(e.key, { y, h: heights[i], val: e.val, used: 0 });
+        y += heights[i];
+        first = false;
+      } else {
+        // collapsed entry - give it a zero-height stub at current y so lookups don't fail
+        map.set(e.key, { y, h: 0, val: e.val, used: 0 });
+      }
+    }
+    return map;
+  };
+  const Ls = layoutCol(senderEntries);
+  const Lr = layoutCol(receiverEntries);
+
+  // Group ribbons by sender so each sender's outgoing flows stack in a stable order
+  // matching the receiver column order, which minimizes visual crossings.
+  const receiverOrder = new Map();
+  receiverCol.forEach((k, i) => receiverOrder.set(k, i));
+  const senderOrder = new Map();
+  senderCol.forEach((k, i) => senderOrder.set(k, i));
+
+  // Compute per-side heights for each ribbon so they exactly fill each node.
+  // senderTotalVal[s] = sum of all ribbon values leaving s (same as Ls.get(s).val)
+  // For each ribbon r, hFromA = (r.value / senderTotalVal[r.from]) * a.h
+  //                  hFromB = (r.value / receiverTotalVal[r.to])  * b.h
+  const ribbons = [...bucketed.values()];
+
+  // Sort ribbons by (sender index, receiver index) so stacks line up naturally
+  ribbons.sort((x, y) => {
+    const sa = senderOrder.get(x.from) - senderOrder.get(y.from);
+    if (sa !== 0) return sa;
+    return receiverOrder.get(x.to) - receiverOrder.get(y.to);
+  });
+
+  // Pre-compute per-sender and per-receiver running sums of value, so ribbon heights
+  // are exact fractions of each node's height on its own side.
+  const senderSum = new Map();
+  const receiverSum = new Map();
+  for (const r of ribbons) {
+    bumpMap(senderSum, r.from, r.value);
+    bumpMap(receiverSum, r.to, r.value);
+  }
+
+  // Reset used offsets (layoutCol sets them to 0, but just to be safe)
+  for (const n of Ls.values()) n.used = 0;
+  for (const n of Lr.values()) n.used = 0;
+
+  // Draw ribbons
+  for (const r of ribbons) {
+    const a = Ls.get(r.from), b = Lr.get(r.to);
+    if (!a || !b) continue;
+    // Skip if either endpoint node was collapsed to zero height
+    if (a.h === 0 || b.h === 0) continue;
+    const sSum = senderSum.get(r.from) || 1;
+    const rSum = receiverSum.get(r.to) || 1;
+    const hFromA = (r.value / sSum) * a.h;
+    const hFromB = (r.value / rSum) * b.h;
+    // Skip sub-pixel slivers
+    if (hFromA < 0.5 && hFromB < 0.5) {
+      a.used += hFromA;
+      b.used += hFromB;
+      continue;
+    }
+    const y1 = Math.min(a.y + a.used, a.y + a.h), y2 = Math.min(y1 + hFromA, a.y + a.h);
+    const y3 = Math.min(b.y + b.used, b.y + b.h), y4 = Math.min(y3 + hFromB, b.y + b.h);
+    a.used += hFromA;
+    b.used += hFromB;
+
+    const x1 = xL + colW, x2 = xR;
+    const cx = (x1 + x2) / 2;
+
+    // Pick the dominant kind (highest weight) for the ribbon color
+    let dominantKind = null, dominantVal = -1;
+    for (const [k, v] of r.kinds) {
+      if (v > dominantVal) { dominantVal = v; dominantKind = k; }
+    }
+    const baseColor = colorForKind(dominantKind);
+    const hex = baseColor.slice(1);
+    const rr = parseInt(hex.slice(0,2),16), gg = parseInt(hex.slice(2,4),16), bb = parseInt(hex.slice(4,6),16);
+    const color = `rgba(${rr},${gg},${bb},0.22)`;
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.bezierCurveTo(cx, y1, cx, y3, x2, y3);
+    ctx.lineTo(x2, y4);
+    ctx.bezierCurveTo(cx, y4, cx, y2, x1, y2);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  // Draw nodes & labels
+  const labelOf = (k) => {
+    if (k === '__others_s__' || k === '__others_r__') return '… others';
+    if (isNarrow) return k.slice(0, 4) + '…' + k.slice(-3);
+    return k.slice(0, 6) + '…' + k.slice(-4);
+  };
+  const drawCol = (L, x, align) => {
+    ctx.font = labelFont;
+    ctx.textBaseline = 'middle';
+    for (const [key, n] of L) {
+      if (n.h === 0) continue; // collapsed
+      ctx.fillStyle = key.startsWith('__others') ? '#3a8a3a' : '#7fff7f';
+      ctx.fillRect(x, n.y, colW, n.h);
+      ctx.fillStyle = key.startsWith('__others') ? '#3a8a3a' : '#c8ffc8';
+      ctx.textAlign = align;
+      const tx = align === 'right' ? x - 6 : x + colW + 6;
+      ctx.fillText(labelOf(key), tx, n.y + n.h/2);
+    }
+  };
+  drawCol(Ls, xL, 'right');
+  drawCol(Lr, xR, 'left');
+
+  // Headers
+  ctx.fillStyle = '#3a8a3a';
+  ctx.font = 'bold 11px "Courier New", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('» senders', xL + colW/2, 12);
+  ctx.fillText('» receivers', xR + colW/2, 12);
+
+  // Footer stats - count actual ALGO moved
+  let totalAlgo = 0, asaCount = 0;
+  for (const t of viewTxns) {
+    if (t.type === 'pay') totalAlgo += t.amt || 0;
+    else if (t.type === 'axfer' && t.amt) asaCount++;
+  }
+  ctx.fillStyle = '#3a8a3a';
+  ctx.font = '10px "Courier New", monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(`» ${(totalAlgo/1e6).toLocaleString(undefined,{maximumFractionDigits:0})} ALGO moved · ${asaCount} ASA transfers · last ${viewTxns.length} txns`, 8, h - 6);
+
+  // Per-address stats for tooltip: txn-type breakdown and running totals.
+  // We iterate recentTxns independently so we capture ALL types (appl, keyreg,
+  // etc.), not just the value-carrying ones used for ribbon layout.
+  const senderTypes   = new Map(); // addr -> Map<type, count>
+  const receiverTypes = new Map(); // addr -> Map<type, count>
+  // addr -> Map<'ALGO'|assetId, rawTotal>  (raw micro-units; decimals applied at render)
+  const senderAssets   = new Map();
+  const receiverAssets = new Map();
+  for (const t of viewTxns) {
+    if (t.sender) {
+      if (!senderTypes.has(t.sender)) senderTypes.set(t.sender, new Map());
+      bumpMap(senderTypes.get(t.sender), t.type);
+      if (t.type === 'pay' && t.amt) {
+        if (!senderAssets.has(t.sender)) senderAssets.set(t.sender, new Map());
+        bumpMap(senderAssets.get(t.sender), 'ALGO', t.amt);
+      } else if (t.type === 'axfer' && t.amt && t.asset != null) {
+        if (!senderAssets.has(t.sender)) senderAssets.set(t.sender, new Map());
+        bumpMap(senderAssets.get(t.sender), t.asset, t.amt);
+      }
+    }
+    if (t.receiver) {
+      if (!receiverTypes.has(t.receiver)) receiverTypes.set(t.receiver, new Map());
+      bumpMap(receiverTypes.get(t.receiver), t.type);
+      if (t.type === 'pay' && t.amt) {
+        if (!receiverAssets.has(t.receiver)) receiverAssets.set(t.receiver, new Map());
+        bumpMap(receiverAssets.get(t.receiver), 'ALGO', t.amt);
+      } else if (t.type === 'axfer' && t.amt && t.asset != null) {
+        if (!receiverAssets.has(t.receiver)) receiverAssets.set(t.receiver, new Map());
+        bumpMap(receiverAssets.get(t.receiver), t.asset, t.amt);
+      }
+    }
+  }
+
+  // Aggregate __others__ buckets so the tooltip shows meaningful totals
+  // instead of 0 for the collapsed "… others" node.
+  const othersTypesS = new Map(), othersAssetsS = new Map();
+  const othersTypesR = new Map(), othersAssetsR = new Map();
+  for (const [addr, m] of senderTypes)    { if (!senders.set.has(addr))   for (const [k,v] of m) bumpMap(othersTypesS,  k, v); }
+  for (const [addr, m] of senderAssets)   { if (!senders.set.has(addr))   for (const [k,v] of m) bumpMap(othersAssetsS, k, v); }
+  for (const [addr, m] of receiverTypes)  { if (!receivers.set.has(addr)) for (const [k,v] of m) bumpMap(othersTypesR,  k, v); }
+  for (const [addr, m] of receiverAssets) { if (!receivers.set.has(addr)) for (const [k,v] of m) bumpMap(othersAssetsR, k, v); }
+  senderTypes.set('__others_s__',   othersTypesS);
+  senderAssets.set('__others_s__',  othersAssetsS);
+  receiverTypes.set('__others_r__',  othersTypesR);
+  receiverAssets.set('__others_r__', othersAssetsR);
+  // txn counts for "others" = sum of flow counts for non-top addresses
+  senderCounts.set('__others_s__',   senders.rest   || 0);
+  receiverCounts.set('__others_r__', receivers.rest || 0);
+
+  // Store layout state for hover hit-testing (all values are in CSS-pixel space)
+  sankeyHitState = {
+    xL, xR, nodeW: colW, Ls, Lr, bucketed, senderCounts, receiverCounts,
+    senderTypes, receiverTypes, senderAssets, receiverAssets
+  };
+}
+
+
+function drawBigMoves() {
+  const el = $('bigMoves');
+  if (!el) return;
+  if (bigMoves.length === 0) { el.innerHTML = '<div class="bar"><span class="bar-text"><span class="bar-name">waiting…</span></span></div>'; return; }
+  const fmt = (n) => {
+    if (n >= 1e9) return (n/1e9).toFixed(2) + 'B';
+    if (n >= 1e6) return (n/1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return (n/1e3).toFixed(2) + 'K';
+    return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  };
+  const esc = s => String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const cp = (val, label) =>
+    `<span onclick="copyIt('${esc(val)}')" style="cursor:pointer" title="copy">${label}</span>`;
+  const kindLabel = (kind) => {
+    if (kind === 'ALGO') return 'ALGO';
+    const meta = assetCache.get(kind);
+    const label = (meta && typeof meta === 'object') ? (meta.unit || meta.name || ('ASA ' + kind)) : ('ASA ' + kind);
+    return cp(kind, label);
+  };
+  const max = bigMoves[0].human;
+  el.innerHTML = bigMoves.map(m => {
+    const pct = (m.human / max) * 100;
+    const color = colorForKind(m.kind);
+    const from = cp(m.sender, m.sender.slice(0,5) + '…');
+    const to   = cp(m.receiver, m.receiver.slice(0,5) + '…');
+    const rnd  = cp(m.round, '#' + m.round);
+    return `<div class="bar">
+      <div class="bar-fill" style="width:${pct}%"></div>
+      <div class="bar-text">
+        <span class="bar-name" style="color:${color}">${fmt(m.human)} ${kindLabel(m.kind)}</span>
+        <span class="bar-sub">${from} » ${to} · ${rnd}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function drawGini() {
+  // Concentration: what fraction of activity comes from top 1% of senders
+  const counts = new Map();
+  for (const s of recentSenders) bumpMap(counts, s);
+  const arr = [...counts.values()].sort((a,b) => b-a);
+  if (arr.length < 5) return;
+  const total = arr.reduce((a,b)=>a+b,0);
+  const topN = Math.max(1, Math.floor(arr.length * 0.01));
+  const topShare = arr.slice(0, topN).reduce((a,b)=>a+b,0) / total;
+
+  const c = $('gini');
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  c.width = w*dpr; c.height = h*dpr;
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0,0,w,h);
+
+  // bar - muted green to yellow to red
+  const grad = ctx.createLinearGradient(0,0,w,0);
+  grad.addColorStop(0, '#7fff7f');
+  grad.addColorStop(0.5, '#ffff7f');
+  grad.addColorStop(1, '#ff5555');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, h/2-8, w, 16);
+  ctx.strokeStyle = '#2d5d2d';
+  ctx.strokeRect(0, h/2-8, w, 16);
+
+  // marker - bright triangle
+  const x = topShare * w;
+  ctx.fillStyle = '#c8ffc8';
+  ctx.beginPath();
+  ctx.moveTo(x, h/2 - 14);
+  ctx.lineTo(x-6, h/2 - 22);
+  ctx.lineTo(x+6, h/2 - 22);
+  ctx.closePath(); ctx.fill();
+
+  ctx.fillStyle = '#3a8a3a';
+  ctx.font = '10px "Courier New", monospace';
+  ctx.fillText('» crowd', 4, h - 4);
+  ctx.textAlign = 'right';
+  ctx.fillText('wha1es «', w-4, h - 4);
+
+  const label = topShare < 0.2 ? 'broad participation' :
+                topShare < 0.5 ? 'mixed activity' :
+                topShare < 0.75 ? 'whale-leaning' : 'wha1e-d0minated';
+  $('giniLabel').textContent = `top 1% senders == ${(topShare*100).toFixed(1)}% of txns :: ${label}`;
+}
+
+function restart() {
+  endpoint = $('url').value.replace(/\/$/, '');
+  queue = []; history = []; stats = { count: 0, totalTxns: 0 };
+  skylineCols = []; assetCounts = new Map(); accountCounts = new Map(); recentSenders = [];
+  recentTxns = [];
+  bigMoves = [];
+  totalFees = 0; lastBlockFees = 0;
+  uniqueProposers = new Set();
+  sankeyHitState = null;
+  excludedKinds.clear();
+  knownKinds = new Set();
+  currentKinds = new Set();
+  assetCache.clear();
+  lastBlockAt = null;
+  $('log').innerHTML = '';
+  $('assets').innerHTML = ''; $('accounts').innerHTML = ''; $('bigMoves').innerHTML = '';
+  $('sCount').textContent = '0'; $('sTxns').textContent = '0';
+  $('sAvgTxn').textContent = '—'; $('sBlockTime').textContent = '—';
+  $('sSince').textContent = '—'; $('giniLabel').textContent = '—';
+  $('sFees').textContent = '0'; $('sAvgFees').textContent = '—'; $('sProposers').textContent = '—';
+  drawSkyline();
+  running += 1;
+  loop(running);
+}
+
+setInterval(() => {
+  const el = $('sSince');
+  if (lastBlockAt == null) return;
+  const s = (performance.now() - lastBlockAt) / 1000;
+  el.textContent = s.toFixed(1) + 's';
+  el.classList.toggle('warn', s > 6 && s <= 15);
+  el.classList.toggle('bad', s > 15);
+}, 100);
+
+window.addEventListener('resize', () => { drawSkyline(); drawGini(); drawSankey(); });
+
+// ===== Skyline hover / touch tooltip =====
+(function() {
+  const canvas = $('sky');
+  const tip = $('skyTip');
+
+  function colAtEvent(e) {
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? (e.touches[0] || {}).clientX : e.clientX;
+    if (clientX == null) return null;
+    const x = clientX - rect.left;
+    if (x < 0 || x > rect.width) return null;
+    const nCols = currentMaxCols();
+    const colW = rect.width / nCols;
+    const idx = Math.min(Math.floor(x / colW), nCols - 1);
+    const visible = skylineCols.slice(-nCols);
+    return visible[idx] || null;
+  }
+
+  function showTip(e, col) {
+    if (!col) { tip.style.display = 'none'; return; }
+
+    // Apply the same inner-txn filter used when drawing
+    const txns = includeInner ? col.txns : col.txns.filter(t => !t.inner);
+
+    // Tally txns by type
+    const counts = {};
+    for (const t of txns) counts[t.type] = (counts[t.type] || 0) + 1;
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+    const feesAlgo = (col.fees / 1e6).toFixed(4);
+
+    let html = `<div class="tip-round">block #${col.round.toLocaleString()}</div>`;
+    html += `<div class="tip-row">
+               <span class="tip-label">total txns</span>
+               <span class="tip-val">${txns.length.toLocaleString()}</span>
+             </div>`;
+    if (sorted.length) {
+      html += '<hr class="tip-divider">';
+      for (const [type, count] of sorted) {
+        const name = TYPE_NAMES[type] || type;
+        const color = TYPE_COLORS[type] || TYPE_COLORS.other;
+        html += `<div class="tip-row">
+                   <span class="tip-label" style="color:${color}">${name}</span>
+                   <span class="tip-val">${count}</span>
+                 </div>`;
+      }
+    }
+    html += `<hr class="tip-divider">`;
+    html += `<div class="tip-row">
+               <span class="tip-label">fees</span>
+               <span class="tip-val tip-fees">${feesAlgo} ALGO</span>
+             </div>`;
+
+    tip.innerHTML = html;
+    tip.style.display = 'block';
+
+    // Position near cursor, stay inside viewport
+    const cx = e.touches ? (e.touches[0] || {}).clientX : e.clientX;
+    const cy = e.touches ? (e.touches[0] || {}).clientY : e.clientY;
+    const tw = (tip.offsetWidth || 220) + 4, th = (tip.offsetHeight || 80) + 4;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    let left = cx + 18;
+    if (left + tw > vw - 8) left = cx - tw - 10;
+    left = Math.max(8, left);
+    const top = Math.max(8, Math.min(cy - 12, vh - th - 8));
+    tip.style.left = left + 'px';
+    tip.style.top  = top  + 'px';
+  }
+
+  canvas.addEventListener('mousemove', e => showTip(e, colAtEvent(e)));
+  canvas.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    showTip(e, colAtEvent(e));
+  }, { passive: false });
+  canvas.addEventListener('touchend', () => { tip.style.display = 'none'; });
+  canvas.addEventListener('click', e => {
+    const col = colAtEvent(e);
+    if (col) copyIt(String(col.round));
+  });
+  canvas.style.cursor = 'crosshair';
+})();
+
+// ===== Sankey hover / touch tooltip =====
+(function() {
+  const canvas = $('sankey');
+  const tip = $('sankeyTip');
+
+  function cssPosFromEvent(e) {
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? (e.touches[0] || {}).clientX : e.clientX;
+    const clientY = e.touches ? (e.touches[0] || {}).clientY : e.clientY;
+    if (clientX == null) return null;
+    return { x: clientX - rect.left, y: clientY - rect.top, clientX, clientY };
+  }
+
+  function nodeAtPos(x, y) {
+    if (!sankeyHitState) return null;
+    const { xL, xR, nodeW, Ls, Lr } = sankeyHitState;
+    if (x >= xL - 2 && x <= xL + nodeW + 2) {
+      for (const [key, n] of Ls) {
+        if (n.h > 0 && y >= n.y && y <= n.y + n.h) return { side: 'sender', key, n };
+      }
+    }
+    if (x >= xR - 2 && x <= xR + nodeW + 2) {
+      for (const [key, n] of Lr) {
+        if (n.h > 0 && y >= n.y && y <= n.y + n.h) return { side: 'receiver', key, n };
+      }
+    }
+    return null;
+  }
+
+  function addrLabel(key) {
+    if (key === '__others_s__' || key === '__others_r__') return '… others';
+    return key.slice(0, 8) + '…' + key.slice(-6);
+  }
+  function addrFull(key) {
+    if (key === '__others_s__' || key === '__others_r__') return null;
+    return key;
+  }
+
+  function showTip(e, pos) {
+    if (!pos || !sankeyHitState) { tip.style.display = 'none'; return; }
+    const node = nodeAtPos(pos.x, pos.y);
+    if (!node) { tip.style.display = 'none'; return; }
+
+    const { side, key } = node;
+    const {
+      bucketed, senderCounts, receiverCounts,
+      senderTypes, receiverTypes, senderAssets, receiverAssets
+    } = sankeyHitState;
+    const isSender = side === 'sender';
+
+    const txnCount = (isSender ? senderCounts : receiverCounts).get(key) || 0;
+    const typeMap  = (isSender ? senderTypes  : receiverTypes).get(key)  || new Map();
+    const assetMap = (isSender ? senderAssets : receiverAssets).get(key) || new Map();
+
+    const sortedTypes = [...typeMap.entries()].sort((a, b) => b[1] - a[1]);
+
+    // Gather connections (top 5 by txn count)
+    const connections = [];
+    for (const r of bucketed.values()) {
+      if ((isSender ? r.from : r.to) !== key) continue;
+      connections.push({ peer: isSender ? r.to : r.from, count: r.count });
+    }
+    connections.sort((a, b) => b.count - a.count);
+    const topConns = connections.slice(0, 5);
+
+    const fmtAmt = (n) => {
+      if (n >= 1e9) return (n / 1e9).toLocaleString(undefined, { maximumFractionDigits: 2 }) + 'B';
+      if (n >= 1e6) return (n / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 }) + 'M';
+      if (n >= 1e3) return (n / 1e3).toLocaleString(undefined, { maximumFractionDigits: 2 }) + 'K';
+      return n.toLocaleString(undefined, { maximumFractionDigits: 4 });
+    };
+
+    const full = addrFull(key);
+    let html = `<div class="stip-head">${isSender ? '» sender' : '» receiver'}</div>`;
+    html += full
+      ? `<div class="stip-addr">${full.slice(0, 20)}…${full.slice(-10)}</div>`
+      : `<div class="stip-addr">aggregated accounts</div>`;
+
+    html += `<div class="stip-row">
+               <span class="stip-label">txns ${isSender ? 'sent' : 'received'}</span>
+               <span class="stip-val">${txnCount.toLocaleString()}</span>
+             </div>`;
+
+    // Txn-type breakdown
+    if (sortedTypes.length) {
+      html += '<hr class="stip-divider">';
+      for (const [type, count] of sortedTypes) {
+        const name  = TYPE_NAMES[type]  || type;
+        const color = TYPE_COLORS[type] || TYPE_COLORS.other;
+        html += `<div class="stip-row">
+                   <span class="stip-label" style="color:${color}">${name}</span>
+                   <span class="stip-val">${count}</span>
+                 </div>`;
+      }
+    }
+
+    // Per-asset amounts — only show assets currently selected in the flow legend
+    if (assetMap.size > 0) {
+      const dir = isSender ? 'sent' : 'received';
+      const algoRaw = excludedKinds.has('ALGO') ? 0 : (assetMap.get('ALGO') || 0);
+
+      // Separate known ASAs from unknown, skipping any that are excluded
+      const known = [], pending = [];
+      for (const [id, raw] of assetMap) {
+        if (id === 'ALGO') continue;
+        if (excludedKinds.has(String(id))) continue;
+        const meta = assetCache.get(id);
+        if (meta && typeof meta === 'object') {
+          const human = raw / Math.pow(10, meta.decimals || 0);
+          const unit  = meta.unit || meta.name || `ASA ${id}`;
+          known.push({ unit, human });
+        } else {
+          pending.push(id);
+        }
+      }
+      known.sort((a, b) => b.human - a.human);
+
+      if (algoRaw > 0 || known.length > 0 || pending.length > 0) {
+        html += '<hr class="stip-divider">';
+
+        if (algoRaw > 0) {
+          html += `<div class="stip-row">
+                     <span class="stip-label" style="color:#7fff7f">ALGO ${dir}</span>
+                     <span class="stip-val" style="color:#7fff7f">${fmtAmt(algoRaw / 1e6)}</span>
+                   </div>`;
+        }
+        for (const { unit, human } of known.slice(0, 6)) {
+          html += `<div class="stip-row">
+                     <span class="stip-label">${unit} ${dir}</span>
+                     <span class="stip-val">${fmtAmt(human)}</span>
+                   </div>`;
+        }
+        if (known.length > 6) {
+          html += `<div class="stip-row">
+                     <span class="stip-label" style="color:#3a8a3a">+ ${known.length - 6} more assets</span>
+                   </div>`;
+        }
+        if (pending.length) {
+          html += `<div class="stip-row">
+                     <span class="stip-label" style="color:#3a8a3a">${pending.length} asset${pending.length > 1 ? 's' : ''} loading…</span>
+                   </div>`;
+        }
+      }
+    }
+
+    // Top peer connections
+    if (topConns.length) {
+      html += '<hr class="stip-divider">';
+      html += `<div class="stip-section">${isSender ? 'top receivers' : 'top senders'}</div>`;
+      for (const c of topConns) {
+        html += `<div class="stip-row">
+                   <span class="stip-label">${addrLabel(c.peer)}</span>
+                   <span class="stip-val">${c.count}</span>
+                 </div>`;
+      }
+      if (connections.length > 5) {
+        const overflow = connections.slice(5).reduce((s, c) => s + c.count, 0);
+        html += `<div class="stip-row">
+                   <span class="stip-label" style="color:#2d5d2d">… ${connections.length - 5} more</span>
+                   <span class="stip-val" style="color:#2d5d2d">${overflow}</span>
+                 </div>`;
+      }
+    }
+
+    tip.innerHTML = html;
+    tip.style.display = 'block';
+
+    // offsetWidth can be 0 on first paint; fall back to max-width so the
+    // overflow-flip always works (avoids right-edge clip on receiver nodes).
+    const tw = (tip.offsetWidth || 284) + 4, th = (tip.offsetHeight || 80) + 4;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const cx = pos.clientX, cy = pos.clientY;
+    let left = cx + 18;
+    if (left + tw > vw - 8) left = cx - tw - 10;
+    left = Math.max(8, left);
+    const top = Math.max(8, Math.min(cy - 12, vh - th - 8));
+    tip.style.left = left + 'px';
+    tip.style.top  = top  + 'px';
+  }
+
+  canvas.addEventListener('mousemove', e => {
+    const pos = cssPosFromEvent(e);
+    showTip(e, pos);
+  });
+  canvas.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const pos = cssPosFromEvent(e);
+    showTip(e, pos);
+  }, { passive: false });
+  canvas.addEventListener('touchend', () => { tip.style.display = 'none'; });
+  canvas.addEventListener('click', e => {
+    const pos = cssPosFromEvent(e);
+    if (!pos) return;
+    const node = nodeAtPos(pos.x, pos.y);
+    if (node && node.key !== '__others_s__' && node.key !== '__others_r__') {
+      copyIt(node.key);
+    }
+  });
+  canvas.style.cursor = 'crosshair';
+})();
+
+restart();
+</script>
+</body>
+</html>
