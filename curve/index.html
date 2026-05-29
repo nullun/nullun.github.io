@@ -12,21 +12,33 @@
             --text-muted: #4b5563;
             --border: #e5e7eb;
             --focus: #3b82f6;
+            --pass: #16a34a;
+            --fail: #dc2626;
+            --info: #6366f1;
         }
-        body { 
-            font-family: system-ui, -apple-system, sans-serif; 
-            background: var(--bg); 
-            color: var(--text-main); 
-            display: flex; 
-            justify-content: center; 
-            padding: 40px 20px; 
-            margin: 0; 
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text-main);
+            margin: 0;
             line-height: 1.5;
         }
+
+        /* ── Layout ─────────────────────────────────────── */
+        .page {
+            max-width: 1160px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            align-items: stretch;
+        }
+        .page-left { width: 100%; }
+
+        /* ── Card ───────────────────────────────────────── */
         .container {
             background: var(--card);
-            max-width: 540px;
-            width: 100%;
             padding: 32px;
             border-radius: 16px;
             box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.05);
@@ -34,55 +46,231 @@
         h2 { margin-top: 0; font-size: 1.5rem; color: #111827; }
         .subtitle { color: var(--text-muted); font-size: 0.95rem; margin-bottom: 24px; }
         label { display: block; font-weight: 600; font-size: 0.875rem; margin-bottom: 8px; color: #374151; }
-        input { 
-            width: 100%; padding: 12px 16px; box-sizing: border-box; 
-            font-family: ui-monospace, monospace; font-size: 0.875rem; 
-            border: 1px solid var(--border); border-radius: 8px; 
-            outline: none; transition: border-color 0.2s, box-shadow 0.2s; 
+        input {
+            width: 100%; padding: 12px 16px; box-sizing: border-box;
+            font-family: ui-monospace, monospace; font-size: 0.875rem;
+            border: 1px solid var(--border); border-radius: 8px;
+            outline: none; transition: border-color 0.2s, box-shadow 0.2s;
         }
         input:focus { border-color: var(--focus); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
-        .examples { margin-top: 12px; font-size: 0.8rem; color: var(--text-muted); display: flex; gap: 8px; align-items: center; }
+        .examples { margin-top: 12px; font-size: 0.8rem; color: var(--text-muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .example-btn { background: none; border: 1px solid var(--border); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; cursor: pointer; color: var(--text-main); transition: background 0.2s; }
         .example-btn:hover { background: #f3f4f6; }
+        .example-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
         .status-container { display: flex; gap: 12px; margin-top: 24px; }
         .status-box { flex: 1; padding: 16px; border-radius: 8px; font-weight: 600; text-align: center; background: #f9fafb; color: #9ca3af; border: 2px solid #e5e7eb; transition: all 0.2s ease; }
-        .status-box.active { background: #ffffff; color: var(--text-main); border-color: var(--text-main); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
-        #error-msg { margin-top: 12px; font-size: 0.875rem; color: #991b1b; display: none; text-align: center; }
+        .status-box.active { color: var(--text-main); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .status-box.active.on  { background: #f0fdf4; border-color: var(--pass); color: var(--pass); }
+        .status-box.active.off { background: #fef2f2; border-color: var(--fail); color: var(--fail); }
+        #error-msg { margin-top: 12px; font-size: 0.875rem; color: var(--fail); display: none; text-align: center; }
         .explanation { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--border); font-size: 0.875rem; color: var(--text-muted); }
         .explanation h3 { color: var(--text-main); font-size: 1rem; margin-bottom: 12px; margin-top: 0; }
+
+        /* ── Steps panel (single element, restyled per viewport) ── */
+        #steps-details {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0 16px;
+            background: #fafafa;
+        }
+        #steps-details[hidden] { display: none; }
+        #steps-details[open] { padding-bottom: 16px; }
+        #steps-details summary {
+            padding: 14px 0;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--text-main);
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            user-select: none;
+        }
+        #steps-details summary::-webkit-details-marker { display: none; }
+        #steps-details summary::before {
+            content: '▶';
+            font-size: 0.65rem;
+            transition: transform 0.2s;
+            display: inline-block;
+            width: 12px;
+            color: var(--text-muted);
+        }
+        #steps-details[open] summary::before { transform: rotate(90deg); }
+        #steps-details summary:focus-visible {
+            outline: 2px solid var(--focus);
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
+        .steps-title { display: none; margin: 0 0 16px 0; font-size: 1rem; color: #111827; }
+
+        .steps-body { margin-top: 8px; }
+        .step {
+            display: grid;
+            grid-template-columns: 28px 1fr;
+            grid-template-rows: auto auto;
+            gap: 2px 10px;
+            padding: 10px 12px;
+            border-left: 3px solid var(--border);
+            margin-bottom: 8px;
+            background: #fff;
+            border-radius: 0 6px 6px 0;
+            font-size: 0.8rem;
+        }
+        .step.result { border-left-color: var(--pass); }
+        .step.result.fail { border-left-color: var(--fail); }
+        .step-num {
+            grid-row: 1 / 3;
+            width: 24px; height: 24px;
+            border-radius: 50%;
+            background: #e5e7eb;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            font-weight: 700;
+            align-self: start;
+            margin-top: 1px;
+        }
+        .step.result .step-num { background: #dcfce7; color: var(--pass); }
+        .step.result.fail .step-num { background: #fee2e2; color: var(--fail); }
+        .step-label { font-weight: 600; color: var(--text-main); }
+        .step-desc { color: var(--text-muted); font-size: 0.78rem; }
+        .step-value {
+            grid-column: 2;
+            font-family: ui-monospace, SFMono-Regular, monospace;
+            font-size: 0.7rem;
+            color: var(--info);
+            background: #f5f3ff;
+            padding: 4px 8px;
+            border-radius: 4px;
+            word-break: break-all;
+            overflow-wrap: anywhere;
+            line-height: 1.4;
+            margin-top: 4px;
+        }
+        .step.result .step-value { color: var(--pass); background: #f0fdf4; }
+        .step.result.fail .step-value { color: var(--fail); background: #fef2f2; }
+        .params-note {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            padding: 8px 12px;
+            background: #f0f4ff;
+            border-radius: 6px;
+            font-family: ui-monospace, SFMono-Regular, monospace;
+            word-break: break-all;
+            line-height: 1.6;
+        }
+        .params-note strong { color: var(--text-main); }
+
+        /* ── Responsive breakpoint ──────────────────────── */
+        @media (max-width: 899px) {
+            .page { padding: 20px 12px; }
+        }
+        @media (min-width: 900px) {
+            .page {
+                flex-direction: row;
+                gap: 28px;
+                align-items: flex-start;
+            }
+            .page-left { flex: 0 0 500px; min-width: 0; }
+
+            /* On desktop, the steps element becomes a card in the right column.
+               It is forced-open via JS so the summary toggle is unused. */
+            #steps-details {
+                flex: 1;
+                min-width: 0;
+                background: var(--card);
+                border: none;
+                border-radius: 16px;
+                padding: 20px;
+                box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.05);
+                position: sticky;
+                top: 20px;
+                max-height: 80vh;
+                overflow-y: auto;
+            }
+            #steps-details[open] { padding-bottom: 20px; }
+            #steps-details summary { display: none; }
+            .steps-title { display: block; }
+            .params-note { font-size: 0.7rem; padding: 6px 10px; margin-bottom: 8px; }
+            .step {
+                padding: 6px 10px;
+                margin-bottom: 4px;
+                gap: 0 8px;
+                font-size: 0.72rem;
+            }
+            .step-num {
+                width: 20px; height: 20px;
+                font-size: 0.6rem;
+            }
+            .step-label { font-size: 0.72rem; }
+            .step-desc { font-size: 0.68rem; }
+            .step-value {
+                font-size: 0.62rem;
+                padding: 2px 6px;
+                margin-top: 2px;
+            }
+        }
     </style>
 </head>
 <body>
 
-    <div class="container">
-        <h2>Ed25519 Curve Checker</h2>
-        <p class="subtitle">Check if a public key or Algorand address is on the curve.</p>
+    <div class="page">
+        <div class="page-left">
+            <div class="container">
+                <h2>Ed25519 Curve Checker</h2>
+                <p class="subtitle">Check if a public key or Algorand address is on the curve.</p>
 
-        <label for="pubkey">Public Key (Hex or Algorand Address)</label>
-        <input type="text" id="pubkey" placeholder="e.g. d75a9... or ALGORANDADDRESS..." maxlength="64" oninput="checkKey()">
+                <label for="pubkey">Public Key (Hex or Algorand Address)</label>
+                <input type="text" id="pubkey"
+                       placeholder="e.g. d75a9... or ALGORANDADDRESS..."
+                       maxlength="80"
+                       autocomplete="off"
+                       autocapitalize="off"
+                       autocorrect="off"
+                       spellcheck="false"
+                       aria-describedby="error-msg"
+                       oninput="checkKey()">
 
-        <div class="examples">
-            Try an example:
-            <button class="example-btn" onclick="setExample('25NJQAMCWEFLPVKL73J4SZAHHIHOC4XT3KTCGJNPAINGR5YHKENMEF5QTE')">On curve</button>
-            <button class="example-btn" onclick="setExample('AIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGFFWAF4')">Off curve</button>
+                <div class="examples">
+                    <span id="examples-label">Try an example:</span>
+                    <button class="example-btn"
+                            aria-describedby="examples-label"
+                            onclick="setExample('25NJQAMCWEFLPVKL73J4SZAHHIHOC4XT3KTCGJNPAINGR5YHKENMEF5QTE')">On curve</button>
+                    <button class="example-btn"
+                            aria-describedby="examples-label"
+                            onclick="setExample('AIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGFFWAF4')">Off curve</button>
+                </div>
+
+                <div class="status-container" role="status" aria-live="polite" aria-atomic="true">
+                    <div id="status-on" class="status-box">On curve</div>
+                    <div id="status-off" class="status-box">Off curve</div>
+                </div>
+                <div id="error-msg" role="alert"></div>
+
+                <div class="explanation">
+                    <h3>What does this mean?</h3>
+                    <p>Every standard Ed25519 public key is a mathematical point that lies exactly on the Ed25519 elliptic curve. This page checks if the provided 32-byte string maps to a valid point on that curve.</p>
+                    <p>If an address is <strong>off curve</strong>, it is mathematically impossible for a corresponding private key to exist. This provides a unique security property: even if a quantum computer successfully uses Shor's algorithm to derive private keys from public keys, an "off curve" address remains completely uncrackable, simply because there is no private key to find.</p>
+                </div>
+            </div>
         </div>
 
-        <div class="status-container">
-            <div id="status-on" class="status-box">On curve</div>
-            <div id="status-off" class="status-box">Off curve</div>
-        </div>
-        <div id="error-msg"></div>
-
-        <div class="explanation">
-            <h3>What does this mean?</h3>
-            <p>Every standard Ed25519 public key is a mathematical point that lies exactly on the Ed25519 elliptic curve. This page checks if the provided 32-byte string maps to a valid point on that curve.</p>
-            <p>If an address is <strong>off curve</strong>, it is mathematically impossible for a corresponding private key to exist. This provides a unique security property: even if a quantum computer successfully uses Shor's algorithm to derive private keys from public keys, an "off curve" address remains completely uncrackable, simply because there is no private key to find.</p>
-        </div>
+        <details id="steps-details" hidden aria-label="Step-by-step validation details">
+            <summary>Show Details — step‑by‑step validation</summary>
+            <h3 class="steps-title">Step‑by‑step validation</h3>
+            <div class="steps-body" id="steps-container"></div>
+        </details>
     </div>
 
     <script>
-        // Ed25519 Curve Parameters
+        // ── Ed25519 Curve Parameters ──────────────────────────────
         const p = (1n << 255n) - 19n;
+        const d = ((-121665n * powMod(121666n, p - 2n)) % p + p) % p;
+        const I = powMod(2n, (p - 1n) / 4n);
 
         function powMod(base, exp) {
             let res = 1n;
@@ -94,11 +282,6 @@
             }
             return res;
         }
-
-        // d = -121665 / 121666 mod p
-        const d = ((-121665n * powMod(121666n, p - 2n)) % p + p) % p;
-        // I = 2^((p-1)/4) mod p
-        const I = powMod(2n, (p - 1n) / 4n);
 
         function decodeBase32(str) {
             const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -119,55 +302,141 @@
             return new Uint8Array(output);
         }
 
-        function validateEd25519(bytes) {
-            if (bytes.length !== 32) return false;
+        function bytesToHex(bytes) {
+            return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
 
-            // 2. Compute little-endian y (ignoring the sign bit)
-            bytes[31] &= 0x7f; // Clear highest bit
+        // ── Validation with step‑by‑step diagnostics ──────────────
+        function validateEd25519WithSteps(bytes) {
+            const steps = [];
 
+            function addStep(label, desc, value, status) {
+                steps.push({ label, desc, value, status: status || 'info' });
+            }
+
+            addStep('Decoded bytes',
+                'Input decoded to 32 raw bytes (hex).',
+                bytesToHex(bytes));
+
+            bytes[31] &= 0x7f;
             let y = 0n;
             for (let i = 31; i >= 0; i--) {
                 y = (y << 8n) | BigInt(bytes[i]);
             }
+            const nonCanonical = y >= p;
+            addStep('Extract y',
+                'Bytes interpreted as a little‑endian integer; top bit cleared (sign flag).' +
+                (nonCanonical ? ' (y ≥ p — non-canonical, reduced mod p.)' : ''),
+                '0x' + y.toString(16));
 
-            // 4. Recover x: x^2 = (y^2 - 1) / (d*y^2 + 1) mod p
             const y2 = (y * y) % p;
+            addStep('Compute y²',
+                'Square y, reduced modulo the prime p.',
+                '0x' + y2.toString(16));
+
             const u = (y2 - 1n + p) % p;
+            addStep('Numerator: y² − 1',
+                'Top half of the curve‑recovery fraction.',
+                '0x' + u.toString(16));
+
             const v = (d * y2 + 1n) % p;
-            const v_inv = powMod(v, p - 2n);
-            const x2 = (u * v_inv) % p;
+            addStep('Denominator: d·y² + 1',
+                'Bottom half of the fraction (d is the Ed25519 twist coefficient).',
+                '0x' + v.toString(16));
 
-            // 5. Check if x2 is a valid square root mod p
-            let x = powMod(x2, (p + 3n) / 8n);
+            const vInv = powMod(v, p - 2n);
+            addStep('Compute (d·y² + 1)⁻¹',
+                'Modular inverse of the denominator (Fermat\'s little theorem).',
+                '0x' + vInv.toString(16));
 
-            if ((x * x) % p !== x2) {
-                x = (x * I) % p;
-                if ((x * x) % p !== x2) {
-                    return false; // Not a point on the curve
-                }
+            const x2 = (u * vInv) % p;
+            addStep('Compute x²',
+                'x² = (y² − 1) · (d·y² + 1)⁻¹  mod p — the value that x² must equal.',
+                '0x' + x2.toString(16));
+
+            const x1 = powMod(x2, (p + 3n) / 8n);
+            const x1Ok = (x1 * x1) % p === x2;
+            addStep('Candidate root x₁',
+                'x₁ = x²^((p+3)/8) mod p. For primes ≡ 5 mod 8 (like this one), this gives one candidate square root.',
+                '0x' + x1.toString(16) + (x1Ok ? '<br>✓ x₁² = x²' : '<br>✗ x₁² ≠ x²'));
+
+            const x2Val = (x1 * I) % p;
+            const x2Ok = (x2Val * x2Val) % p === x2;
+            addStep('Candidate root x₂',
+                'x₂ = x₁ · √(−1) mod p. If x² is a quadratic residue, exactly one of {x₁, x₂} will be a valid square root.',
+                '0x' + x2Val.toString(16) + (x2Ok ? '<br>✓ x₂² = x²' : '<br>✗ x₂² ≠ x²'));
+
+            if (x1Ok || x2Ok) {
+                const which = x1Ok ? 'x₁' : 'x₂';
+                addStep('✓ Point on curve',
+                    which + ' satisfies ' + which + '² = x² mod p. A valid Ed25519 point exists.',
+                    'On curve', 'pass');
+                return { valid: true, steps };
             }
 
-            return true;
+            addStep('✗ Off curve',
+                'Neither x₁ nor x₂ satisfy the square equation. x² is not a quadratic residue modulo p — no x can exist. This value cannot be a valid Ed25519 point.',
+                'Off curve', 'fail');
+            return { valid: false, steps };
+        }
+
+        // ── Render steps into the single container ───────────────
+        function renderSteps(steps) {
+            let html = '';
+
+            html += '<div class="params-note">';
+            html += '<strong>Curve:</strong> −x² + y² = 1 + d·x²·y²<br>';
+            html += '<strong>p</strong> = 0x' + p.toString(16) + '<br>';
+            html += '<strong>d</strong> = 0x' + d.toString(16);
+            html += '</div>';
+
+            steps.forEach((step, i) => {
+                const cls = step.status === 'pass' ? 'step result'
+                           : step.status === 'fail' ? 'step result fail'
+                           : 'step';
+                const icon = step.status === 'pass' ? '✓'
+                            : step.status === 'fail' ? '✗'
+                            : (i + 1);
+                html += '<div class="' + cls + '">';
+                html += '<span class="step-num" aria-hidden="true">' + icon + '</span>';
+                html += '<span class="step-label">' + step.label + '</span>';
+                html += '<span class="step-desc">' + step.desc + '</span>';
+                html += '<code class="step-value">' + step.value + '</code>';
+                html += '</div>';
+            });
+
+            document.getElementById('steps-container').innerHTML = html;
         }
 
         function setExample(value) {
-            const inputEl = document.getElementById('pubkey');
-            inputEl.value = value;
+            document.getElementById('pubkey').value = value;
             checkKey();
         }
 
         function checkKey() {
-            const input = document.getElementById('pubkey').value.trim();
+            const raw = document.getElementById('pubkey').value;
+            const input = raw.trim();
+
+            // Normalise the input box so what's used is what's shown.
+            if (raw !== input) {
+                document.getElementById('pubkey').value = input;
+            }
+
             const statusOn = document.getElementById('status-on');
             const statusOff = document.getElementById('status-off');
             const errorMsg = document.getElementById('error-msg');
-            
-            // Reset state
-            statusOn.classList.remove('active');
-            statusOff.classList.remove('active');
+            const details = document.getElementById('steps-details');
+
+            statusOn.classList.remove('active', 'on', 'off');
+            statusOff.classList.remove('active', 'on', 'off');
             errorMsg.style.display = 'none';
-            
-            if (!input) return;
+            errorMsg.textContent = '';
+
+            if (!input) {
+                details.hidden = true;
+                details.open = false;
+                return;
+            }
 
             let bytes;
             if (/^[0-9a-fA-F]{64}$/.test(input)) {
@@ -175,28 +444,43 @@
                 for (let i = 0; i < 32; i++) {
                     bytes[i] = parseInt(input.slice(i * 2, i * 2 + 2), 16);
                 }
-            } else if (/^[A-Z2-7]{58}$/i.test(input)) {
+            } else if (/^[A-Z2-7]{58}$/.test(input)) {
                 try {
                     bytes = decodeBase32(input).slice(0, 32);
                 } catch {
-                    errorMsg.textContent = "Invalid Base32 characters.";
+                    errorMsg.textContent = 'Invalid Base32 characters.';
                     errorMsg.style.display = 'block';
                     return;
                 }
             } else {
-                errorMsg.textContent = "Invalid format. Must be 64 hex chars or 58-char Algorand address.";
+                errorMsg.textContent = 'Invalid format. Must be 64 hex chars or 58-char Algorand address.';
                 errorMsg.style.display = 'block';
                 return;
             }
 
-            const isValid = validateEd25519(bytes);
-            
-            if (isValid) {
-                statusOn.classList.add('active');
+            const bytesCopy = new Uint8Array(bytes);
+            const result = validateEd25519WithSteps(bytesCopy);
+
+            if (result.valid) {
+                statusOn.classList.add('active', 'on');
             } else {
-                statusOff.classList.add('active');
+                statusOff.classList.add('active', 'off');
+            }
+
+            details.hidden = false;
+            renderSteps(result.steps);
+        }
+
+        // On desktop the steps panel is always expanded (the summary is hidden).
+        // Force `open` so its contents render even when the user hasn't toggled.
+        const desktopMQ = window.matchMedia('(min-width: 900px)');
+        function syncDesktopOpen() {
+            if (desktopMQ.matches) {
+                document.getElementById('steps-details').open = true;
             }
         }
+        desktopMQ.addEventListener('change', syncDesktopOpen);
+        syncDesktopOpen();
     </script>
 </body>
 </html>
