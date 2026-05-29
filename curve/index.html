@@ -467,6 +467,8 @@
             if (!input) {
                 page.classList.remove('has-result');
                 document.getElementById('steps-container').innerHTML = '';
+                // Drop the fragment so a cleared box gives a clean, shareable URL.
+                history.replaceState(null, '', location.pathname + location.search);
                 return;
             }
 
@@ -489,6 +491,10 @@
                 errorMsg.style.display = 'block';
                 return;
             }
+
+            // Reflect the valid input in the URL so it can be copied and shared.
+            // replaceState keeps history clean and does not fire `hashchange`.
+            history.replaceState(null, '', '#' + input);
 
             const bytesCopy = new Uint8Array(bytes);
             const result = validateEd25519WithSteps(bytesCopy);
@@ -520,6 +526,20 @@
         }
         desktopMQ.addEventListener('change', syncDesktopOpen);
         syncDesktopOpen();
+
+        // Pre-fill from the URL hash so a key can be checked by link, e.g.
+        // /curve/#SDVVLYRERTQL27S3HZ2Q2IYRH6PD3DFT4BIRLLVF5RRKDCF2VD5JMUXDJM
+        function checkFromHash() {
+            // Strip trailing punctuation (e.g. a period when the link ends a sentence);
+            // valid hex keys and Algorand addresses are alphanumeric only.
+            const value = window.location.hash.slice(1).trim().replace(/[^0-9A-Za-z]+$/, '');
+            if (value) {
+                document.getElementById('pubkey').value = value;
+                checkKey();
+            }
+        }
+        window.addEventListener('hashchange', checkFromHash);
+        checkFromHash();
     </script>
 </body>
 </html>
