@@ -39,17 +39,22 @@
 
         @media (min-width: 900px) {
             .page {
-                grid-template-columns: 1fr;
+                grid-template-columns: minmax(420px, 460px) minmax(0, 0fr);
                 max-width: 492px;
                 gap: 0;
-                transition: max-width 0.55s cubic-bezier(0.2, 0.7, 0.2, 1),
-                            grid-template-columns 0.55s cubic-bezier(0.2, 0.7, 0.2, 1),
-                            gap 0.55s cubic-bezier(0.2, 0.7, 0.2, 1);
+                /* Reverse: panel fades out first, then layout collapses (0.2s delay). */
+                transition: max-width 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) 0.2s,
+                            grid-template-columns 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) 0.2s,
+                            gap 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) 0.2s;
             }
             .page.has-result {
                 grid-template-columns: minmax(420px, 460px) minmax(0, 1fr);
                 max-width: 1200px;
                 gap: 20px;
+                /* Forward: layout slides immediately, panel reveal follows. */
+                transition: max-width 0.55s cubic-bezier(0.2, 0.7, 0.2, 1),
+                            grid-template-columns 0.55s cubic-bezier(0.2, 0.7, 0.2, 1),
+                            gap 0.55s cubic-bezier(0.2, 0.7, 0.2, 1);
             }
             .page > * { min-width: 0; }
             /* On desktop the panel is always laid out — opacity/translate reveal it. */
@@ -57,12 +62,16 @@
                 display: block;
                 opacity: 0;
                 transform: translateX(24px);
-                transition: opacity 0.35s 0.2s ease-out,
-                            transform 0.5s 0.1s cubic-bezier(0.2, 0.7, 0.2, 1);
+                /* Reverse: snappy exit — no delay so the panel leaves before the layout moves. */
+                transition: opacity 0.22s ease-in,
+                            transform 0.28s cubic-bezier(0.4, 0, 0.6, 1);
             }
             .page.has-result #steps-details {
                 opacity: 1;
                 transform: translateX(0);
+                /* Forward: delayed entry — wait for the layout to start opening. */
+                transition: opacity 0.35s 0.2s ease-out,
+                            transform 0.5s 0.1s cubic-bezier(0.2, 0.7, 0.2, 1);
             }
         }
 
@@ -77,8 +86,9 @@
         .subtitle { margin: 0 0 22px; color: var(--muted); font-size: 0.92rem; }
 
         label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; }
+        .input-wrap { position: relative; }
         input {
-            width: 100%; padding: 11px 13px;
+            width: 100%; padding: 11px 38px 11px 13px;
             font: 13px ui-monospace, SFMono-Regular, monospace;
             color: var(--strong);
             background: var(--card);
@@ -89,6 +99,25 @@
         }
         input::placeholder { color: #9aa1ad; }
         input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,0.15); }
+
+        .clear-btn {
+            position: absolute;
+            right: 6px; top: 50%;
+            transform: translateY(-50%);
+            width: 22px; height: 22px;
+            display: flex; align-items: center; justify-content: center;
+            padding: 0; border: none; border-radius: 50%;
+            background: transparent; color: var(--muted);
+            font: 16px/1 system-ui, sans-serif;
+            cursor: pointer;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.15s, color 0.15s, background 0.15s;
+        }
+        .input-wrap input:not(:placeholder-shown) ~ .clear-btn {
+            opacity: 1; pointer-events: auto;
+        }
+        .clear-btn:hover { color: var(--strong); background: var(--bg); }
+        .clear-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
         .examples { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; font-size: 0.78rem; color: var(--muted); }
         .example-btn {
@@ -215,15 +244,18 @@
             <p class="subtitle">Check if a public key or Algorand address is on the curve.</p>
 
             <label for="pubkey">Public Key (Hex or Algorand Address)</label>
-            <input type="text" id="pubkey"
-                   placeholder="e.g. d75a9... or ALGORANDADDRESS..."
-                   maxlength="80"
-                   autocomplete="off"
-                   autocapitalize="off"
-                   autocorrect="off"
-                   spellcheck="false"
-                   aria-describedby="error-msg"
-                   oninput="checkKey()">
+            <div class="input-wrap">
+                <input type="text" id="pubkey"
+                       placeholder="e.g. d75a9... or ALGORANDADDRESS..."
+                       maxlength="80"
+                       autocomplete="off"
+                       autocapitalize="off"
+                       autocorrect="off"
+                       spellcheck="false"
+                       aria-describedby="error-msg"
+                       oninput="checkKey()">
+                <button type="button" class="clear-btn" aria-label="Clear input" onclick="clearKey()">×</button>
+            </div>
 
             <div class="examples">
                 <span id="examples-label">Try an example:</span>
@@ -400,6 +432,13 @@
 
         function setExample(value) {
             document.getElementById('pubkey').value = value;
+            checkKey();
+        }
+
+        function clearKey() {
+            const input = document.getElementById('pubkey');
+            input.value = '';
+            input.focus();
             checkKey();
         }
 
